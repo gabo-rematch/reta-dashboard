@@ -3,7 +3,10 @@
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+const WORKER_ORIGIN = "https://reta-worker.gabriel-6f6.workers.dev";
+
 export default defineConfig({
+  define: { "import.meta.env.VITE_WORKER_ORIGIN": JSON.stringify(WORKER_ORIGIN) },
   base: "/reta-dashboard/",
   plugins: [react()],
   test: {
