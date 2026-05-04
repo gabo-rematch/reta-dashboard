@@ -1,0 +1,20 @@
+{
+  "name": "reta-worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev --port 8788",
+    "deploy": "wrangler deploy",
+    "test": "vitest --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "latest",
+    "@vitest/coverage-v8": "^1.6.1",
+    "miniflare": "latest",
+    "typescript": "^5.4.5",
+    "vitest": "^1.6.1",
+    "wrangler": "latest"
+  }
+}

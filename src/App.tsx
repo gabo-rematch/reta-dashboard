@@ -4,6 +4,8 @@ import { HoldsCard } from "./components/HoldsCard";
 import { History } from "./components/History";
 import { Passphrase } from "./components/Passphrase";
 import { PenCard } from "./components/PenCard";
+import { EnableNotifications } from "./components/EnableNotifications";
+import { SymptomForm } from "./components/SymptomForm";
 import { DecryptError, decryptEnvelope } from "./lib/crypto";
 import type { Envelope } from "./lib/crypto";
 import {
@@ -20,6 +22,7 @@ import {
 import type { RetaSnapshot } from "./lib/types";
 
 const PROJECT_TZ = "Asia/Dubai";
+const WORKER_ORIGIN = import.meta.env.VITE_WORKER_ORIGIN ?? "";
 
 type LoadState =
   | { status: "loading" }
@@ -223,12 +226,14 @@ function Dashboard({ snapshot, now }: { snapshot: RetaSnapshot; now: Date }) {
         now={now}
       />
       <PenCard supply={supply} />
+      <SymptomForm workerOrigin={WORKER_ORIGIN} />
       <HoldsCard holds={holds} />
       <History
         injections={snapshot.injections}
         symptoms={snapshot.symptoms}
         now={now}
       />
+      <EnableNotifications workerOrigin={WORKER_ORIGIN} />
     </>
   );
 }

@@ -1,0 +1,20 @@
+name = "reta-worker"
+main = "src/index.ts"
+compatibility_date = "2026-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[[kv_namespaces]]
+binding = "KV"
+id = "REPLACE_ME_KV_ID"
+
+[triggers]
+crons = ["0 15 * * *", "0 14 * * 6"]
+
+[vars]
+DASHBOARD_ORIGIN = "https://gabo-rematch.github.io"
+
+# Set these with:
+# wrangler secret put VAPID_PUBLIC_KEY
+# wrangler secret put VAPID_PRIVATE_KEY
+# wrangler secret put VAPID_SUBJECT
+# wrangler secret put DRAIN_TOKEN
