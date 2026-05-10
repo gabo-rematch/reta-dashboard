@@ -1,6 +1,7 @@
 # reta-worker
 
-Cloudflare Worker for `reta` PWA push reminders and the server-side symptom queue.
+Cloudflare Worker for `reta` PWA push reminders and the server-side symptom and
+injection queues.
 
 ## Deploy
 

@@ -82,6 +82,8 @@ describe("App", () => {
     fireEvent.click(screen.getByRole("button", { name: /unlock/i }));
 
     expect(await screen.findByText(/Week 1/)).not.toBeNull();
+    expect(await screen.findByText("Injection log")).not.toBeNull();
+    expect(screen.getByText("Symptom log")).not.toBeNull();
     expect(sessionStorage.getItem("reta-dashboard:passphrase")).toBe("test");
   });
 

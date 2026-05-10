@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Hero } from "./components/Hero";
 import { HoldsCard } from "./components/HoldsCard";
 import { History } from "./components/History";
+import { InjectionForm } from "./components/InjectionForm";
 import { Passphrase } from "./components/Passphrase";
 import { PenCard } from "./components/PenCard";
 import { EnableNotifications } from "./components/EnableNotifications";
@@ -212,6 +213,7 @@ function Dashboard({ snapshot, now }: { snapshot: RetaSnapshot; now: Date }) {
   const activePen =
     snapshot.pens.find((pen) => pen.is_active === 1) ?? snapshot.pens[0];
   const currentDoseMg = protocolState?.current_dose_mg ?? lastInjection?.dose_mg ?? 0;
+  const currentClicks = Math.max(1, Math.round(currentDoseMg / 0.1));
   const supply = weeksOfSupply(activePen, currentDoseMg);
   const holds = activeHolds(snapshot.symptoms, protocolState, week, now);
   const countdown = nextDoseCountdown(protocolState, now);
@@ -226,6 +228,7 @@ function Dashboard({ snapshot, now }: { snapshot: RetaSnapshot; now: Date }) {
         now={now}
       />
       <PenCard supply={supply} />
+      <InjectionForm defaultClicks={currentClicks} workerOrigin={WORKER_ORIGIN} />
       <SymptomForm workerOrigin={WORKER_ORIGIN} />
       <HoldsCard holds={holds} />
       <History

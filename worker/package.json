@@ -16,5 +16,8 @@
     "typescript": "^5.4.5",
     "vitest": "^1.6.1",
     "wrangler": "latest"
+  },
+  "dependencies": {
+    "mimetext": "^3.0.28"
   }
 }

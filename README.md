@@ -33,9 +33,10 @@ openssl rand -base64 32
 ```
 
 Set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, `VAPID_SUBJECT`, and `DRAIN_TOKEN`
-with `wrangler secret put <NAME>` from `worker/`. Symptoms entered in the PWA
-queue server-side; a launchd job on the Mac drains them every 15 min via
-`reta log symptom` (separate setup, not in this repo).
+with `wrangler secret put <NAME>` from `worker/`. Symptoms and injections
+entered in the PWA queue server-side; a launchd job on the Mac drains them
+every 15 min via `reta log symptom` and `reta log injection` (separate setup,
+not in this repo).
 
 ## Data
 

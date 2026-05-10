@@ -8,7 +8,7 @@ binding = "KV"
 id = "a5619ef5ab274c08a46e199e08dd7d14"
 
 [triggers]
-crons = ["0 15 * * *", "0 14 * * 6"]
+crons = ["0 15 * * *", "0 14 * * 6", "7 10 * * 6"]
 
 [vars]
 DASHBOARD_ORIGIN = "https://gabo-rematch.github.io"
@@ -18,3 +18,7 @@ DASHBOARD_ORIGIN = "https://gabo-rematch.github.io"
 # wrangler secret put VAPID_PRIVATE_KEY
 # wrangler secret put VAPID_SUBJECT
 # wrangler secret put DRAIN_TOKEN
+
+[[send_email]]
+name = "SAT_EMAIL"
+destination_address = "ggl245@nyu.edu"

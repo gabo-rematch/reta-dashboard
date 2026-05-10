@@ -13,6 +13,8 @@ type VapidConfig = {
   subject: string;
 };
 
+type Bytes = Uint8Array<ArrayBuffer>;
+
 const encoder = new TextEncoder();
 const aes128GcmRecordSize = 4096;
 
@@ -44,7 +46,7 @@ export async function sendWebPush(
 async function encryptPayload(
   subscription: PushSubscription,
   payload: string | Uint8Array
-): Promise<Uint8Array> {
+): Promise<Bytes> {
   const receiverPublicKey = urlBase64ToBytes(subscription.keys.p256dh);
   const authSecret = urlBase64ToBytes(subscription.keys.auth);
   const salt = randomBytes(16);
@@ -53,7 +55,7 @@ async function encryptPayload(
     true,
     ["deriveBits"]
   );
-  const localPublicKey = new Uint8Array(
+  const localPublicKey = bytesFromBuffer(
     await crypto.subtle.exportKey("raw", localKeyPair.publicKey)
   );
   const importedReceiverPublicKey = await crypto.subtle.importKey(
@@ -63,7 +65,7 @@ async function encryptPayload(
     false,
     []
   );
-  const sharedSecret = new Uint8Array(
+  const sharedSecret = bytesFromBuffer(
     await crypto.subtle.deriveBits(
       { name: "ECDH", public: importedReceiverPublicKey },
       localKeyPair.privateKey,
@@ -71,7 +73,7 @@ async function encryptPayload(
     )
   );
   const keyInfo = concatBytes(
-    encoder.encode("WebPush: info\0"),
+    encodeBytes("WebPush: info\0"),
     receiverPublicKey,
     localPublicKey
   );
@@ -80,16 +82,16 @@ async function encryptPayload(
   const contentPseudoRandomKey = await hmac(salt, inputKeyMaterial);
   const contentEncryptionKey = await hkdfExpand(
     contentPseudoRandomKey,
-    encoder.encode("Content-Encoding: aes128gcm\0"),
+    encodeBytes("Content-Encoding: aes128gcm\0"),
     16
   );
   const nonce = await hkdfExpand(
     contentPseudoRandomKey,
-    encoder.encode("Content-Encoding: nonce\0"),
+    encodeBytes("Content-Encoding: nonce\0"),
     12
   );
-  const bytes = typeof payload === "string" ? encoder.encode(payload) : payload;
-  const plaintext = concatBytes(bytes, Uint8Array.of(2));
+  const bytes = typeof payload === "string" ? encodeBytes(payload) : toBytes(payload);
+  const plaintext = concatBytes(bytes, toBytes(Uint8Array.of(2)));
   const aesKey = await crypto.subtle.importKey(
     "raw",
     contentEncryptionKey,
@@ -97,14 +99,14 @@ async function encryptPayload(
     false,
     ["encrypt"]
   );
-  const ciphertext = new Uint8Array(
+  const ciphertext = bytesFromBuffer(
     await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aesKey, plaintext)
   );
 
   return concatBytes(
     salt,
     uint32(aes128GcmRecordSize),
-    Uint8Array.of(localPublicKey.length),
+    toBytes(Uint8Array.of(localPublicKey.length)),
     localPublicKey,
     ciphertext
   );
@@ -126,7 +128,7 @@ async function createVapidJwt(
     await crypto.subtle.sign(
       { name: "ECDSA", hash: "SHA-256" },
       key,
-      encoder.encode(unsignedToken)
+      encodeBytes(unsignedToken)
     )
   );
 
@@ -159,7 +161,7 @@ async function importVapidPrivateKey(vapid: VapidConfig): Promise<CryptoKey> {
   );
 }
 
-async function hmac(keyBytes: Uint8Array, data: Uint8Array): Promise<Uint8Array> {
+async function hmac(keyBytes: Bytes, data: Bytes): Promise<Bytes> {
   const key = await crypto.subtle.importKey(
     "raw",
     keyBytes,
@@ -168,15 +170,15 @@ async function hmac(keyBytes: Uint8Array, data: Uint8Array): Promise<Uint8Array>
     ["sign"]
   );
 
-  return new Uint8Array(await crypto.subtle.sign("HMAC", key, data));
+  return bytesFromBuffer(await crypto.subtle.sign("HMAC", key, data));
 }
 
 async function hkdfExpand(
-  pseudoRandomKey: Uint8Array,
-  info: Uint8Array,
+  pseudoRandomKey: Bytes,
+  info: Bytes,
   length: number
-): Promise<Uint8Array> {
-  const blocks: Uint8Array[] = [];
+): Promise<Bytes> {
+  const blocks: Bytes[] = [];
   let previous = new Uint8Array();
   let blockIndex = 1;
 
@@ -193,10 +195,10 @@ async function hkdfExpand(
 }
 
 function base64UrlJson(value: unknown): string {
-  return base64UrlEncode(encoder.encode(JSON.stringify(value)));
+  return base64UrlEncode(encodeBytes(JSON.stringify(value)));
 }
 
-function urlBase64ToBytes(value: string): Uint8Array {
+function urlBase64ToBytes(value: string): Bytes {
   const padding = "=".repeat((4 - (value.length % 4)) % 4);
   const raw = atob(`${value}${padding}`.replace(/-/g, "+").replace(/_/g, "/"));
   const output = new Uint8Array(raw.length);
@@ -218,7 +220,7 @@ function base64UrlEncode(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function concatBytes(...arrays: Uint8Array[]): Uint8Array {
+function concatBytes(...arrays: Bytes[]): Bytes {
   const output = new Uint8Array(
     arrays.reduce((total, array) => total + array.length, 0)
   );
@@ -232,14 +234,26 @@ function concatBytes(...arrays: Uint8Array[]): Uint8Array {
   return output;
 }
 
-function randomBytes(length: number): Uint8Array {
+function randomBytes(length: number): Bytes {
   const bytes = new Uint8Array(length);
   crypto.getRandomValues(bytes);
 
   return bytes;
 }
 
-function uint32(value: number): Uint8Array {
+function encodeBytes(value: string): Bytes {
+  return new Uint8Array(encoder.encode(value));
+}
+
+function bytesFromBuffer(value: ArrayBuffer): Bytes {
+  return new Uint8Array(value);
+}
+
+function toBytes(value: Uint8Array): Bytes {
+  return new Uint8Array(value);
+}
+
+function uint32(value: number): Bytes {
   return Uint8Array.from([
     (value >>> 24) & 255,
     (value >>> 16) & 255,

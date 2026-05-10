@@ -1,6 +1,14 @@
 import { defineConfig } from "vitest/config";
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      "cloudflare:email": new URL(
+        "./tests/cloudflare-email-stub.ts",
+        import.meta.url
+      ).pathname
+    }
+  },
   test: {
     environment: "node",
     coverage: {

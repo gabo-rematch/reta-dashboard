@@ -1,9 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import worker, { handleScheduled } from "../src/index";
 import { sendWebPush } from "../src/push";
 import type { PushSubscription } from "../src/push";
 
 const allowedOrigin = "https://gabo-rematch.github.io";
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
 
 describe("reta-worker fetch routes", () => {
   let env: TestEnv;
@@ -60,6 +65,64 @@ describe("reta-worker fetch routes", () => {
       "status",
       400
     );
+  });
+
+  it("queues valid injection inputs with the derived dose", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-10T10:02:00.000Z"));
+
+    try {
+      const response = await postInjection(env, {
+        clicks: 6,
+        site: "thigh",
+        notes: "late dose",
+        preserveSchedule: true
+      });
+
+      expect(response.status).toBe(200);
+      const pending = await worker.fetch(
+        new Request("https://worker.test/injection/pending", {
+          headers: { Authorization: `Bearer ${env.DRAIN_TOKEN}` }
+        }),
+        env,
+        makeCtx()
+      );
+
+      await expect(pending.json()).resolves.toEqual([
+        {
+          key: expect.stringMatching(
+            /^injection-queue:2026-05-10T10:02:00\.000Z:/
+          ),
+          ts: "2026-05-10T10:02:00.000Z",
+          id: expect.any(String),
+          clicks: 6,
+          dose_mg: 0.6,
+          site: "thigh",
+          notes: "late dose",
+          preserve_schedule: true
+        }
+      ]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("validates injection inputs", async () => {
+    await expect(postInjection(env, { clicks: 0 })).resolves.toHaveProperty(
+      "status",
+      400
+    );
+    await expect(postInjection(env, { clicks: 6.5 })).resolves.toHaveProperty(
+      "status",
+      400
+    );
+    await expect(postInjection(env, { site: "back" })).resolves.toHaveProperty(
+      "status",
+      400
+    );
+    await expect(
+      postInjection(env, { notes: "x".repeat(501) })
+    ).resolves.toHaveProperty("status", 400);
   });
 
   it("requires drain authorization for pending symptoms", async () => {
@@ -146,6 +209,51 @@ describe("reta-worker fetch routes", () => {
     await expect(env.KV.get(key)).resolves.toBeNull();
   });
 
+  it("requires drain authorization and deletes queued injection items", async () => {
+    const unauthorized = await worker.fetch(
+      new Request("https://worker.test/injection/pending"),
+      env,
+      makeCtx()
+    );
+    expect(unauthorized.status).toBe(401);
+
+    const key = "injection-queue:2026-05-10T10:02:00.000Z:aaa";
+    await env.KV.put(key, "{}");
+
+    const response = await worker.fetch(
+      new Request(
+        `https://worker.test/injection/pending/${encodeURIComponent(key)}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${env.DRAIN_TOKEN}` }
+        }
+      ),
+      env,
+      makeCtx()
+    );
+
+    expect(response.status).toBe(200);
+    await expect(env.KV.get(key)).resolves.toBeNull();
+  });
+
+  it("rejects non-injection queue keys from the injection delete endpoint", async () => {
+    const response = await worker.fetch(
+      new Request(
+        `https://worker.test/injection/pending/${encodeURIComponent(
+          "queue:2026-05-04T09:00:00.000Z:aaa"
+        )}`,
+        {
+          method: "DELETE",
+          headers: { Authorization: `Bearer ${env.DRAIN_TOKEN}` }
+        }
+      ),
+      env,
+      makeCtx()
+    );
+
+    expect(response.status).toBe(400);
+  });
+
   it("responds to CORS preflight for allowed browser origins", async () => {
     const response = await worker.fetch(
       new Request("https://worker.test/symptom", {
@@ -218,6 +326,61 @@ describe("reta-worker scheduled pushes", () => {
     );
   });
 
+  it("sends the Saturday email brief from the encrypted dashboard snapshot", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-05-09T10:00:00Z"));
+    const envelope = await encryptDashboardSnapshot(
+      {
+        pens: [{ id: 1, mg_remaining: 29, is_active: 1 }],
+        injections: [
+          {
+            ts: "2026-05-10T10:02:00Z",
+            dose_mg: 0.6,
+            clicks: 6,
+            site: null
+          }
+        ],
+        symptoms: [],
+        daily_vitals: [],
+        protocol_state: [
+          {
+            current_week: 2,
+            current_step: 1,
+            current_dose_mg: 0.6,
+            next_dose_due: "2026-05-16T14:40:00Z",
+            escalation_locked_until_week: null,
+            started_on: "2026-05-02"
+          }
+        ]
+      },
+      env.DASHBOARD_PASSPHRASE
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(
+        new Response(JSON.stringify(envelope), {
+          headers: { "Content-Type": "application/json" }
+        })
+      )
+    );
+    const ctx = makeCtx();
+
+    await handleScheduled({ cron: "7 10 * * 6" } as ScheduledEvent, env, ctx);
+    await ctx.flush();
+
+    expect(fetch).toHaveBeenCalledWith(
+      `${allowedOrigin}/reta-dashboard/data/reta.enc.json`,
+      { cf: { cacheTtl: 0 } }
+    );
+    expect(env.SAT_EMAIL.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        from: "reta@gabodecuba.com",
+        to: "ggl245@nyu.edu",
+        raw: expect.stringContaining("0.6 mg / 6 clicks")
+      })
+    );
+  });
+
   it("deletes expired subscriptions after 410 Gone", async () => {
     const sender = vi.fn().mockResolvedValue({ status: 410, expired: true });
     const ctx = makeCtx();
@@ -261,6 +424,8 @@ type TestEnv = {
   VAPID_PRIVATE_KEY: string;
   VAPID_SUBJECT: string;
   DRAIN_TOKEN: string;
+  DASHBOARD_PASSPHRASE: string;
+  SAT_EMAIL: { send: (message: unknown) => Promise<unknown> };
 };
 
 class MemoryKV {
@@ -299,7 +464,9 @@ function makeEnv(): TestEnv {
     VAPID_PUBLIC_KEY: `test-public-${crypto.randomUUID()}`,
     VAPID_PRIVATE_KEY: `test-private-${crypto.randomUUID()}`,
     VAPID_SUBJECT: "mailto:test@example.com",
-    DRAIN_TOKEN: `test-drain-${crypto.randomUUID()}`
+    DRAIN_TOKEN: `test-drain-${crypto.randomUUID()}`,
+    DASHBOARD_PASSPHRASE: "test-passphrase",
+    SAT_EMAIL: { send: vi.fn().mockResolvedValue({}) }
   };
 }
 
@@ -340,6 +507,30 @@ async function postSymptom(
   );
 }
 
+async function postInjection(
+  env: TestEnv,
+  overrides: Record<string, unknown>
+): Promise<Response> {
+  return worker.fetch(
+    new Request("https://worker.test/injection", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: allowedOrigin
+      },
+      body: JSON.stringify({
+        clicks: 6,
+        site: null,
+        notes: null,
+        preserveSchedule: true,
+        ...overrides
+      })
+    }),
+    env,
+    makeCtx()
+  );
+}
+
 function makeSubscription(): PushSubscription {
   return {
     endpoint: "https://push.example/send/1",
@@ -369,6 +560,86 @@ async function makeGeneratedSubscription(): Promise<PushSubscription> {
       auth: base64url(auth)
     }
   };
+}
+
+type DashboardSnapshot = {
+  pens: Array<{ id: number; mg_remaining: number; is_active: number }>;
+  injections: Array<{
+    ts: string;
+    dose_mg: number;
+    clicks: number;
+    site: string | null;
+  }>;
+  symptoms: Array<{
+    ts: string;
+    category: string;
+    severity: number;
+    vomit: number;
+    note: string | null;
+  }>;
+  daily_vitals: Array<{ date: string; rhr: number | null; hrv: number | null }>;
+  protocol_state: Array<{
+    current_week: number;
+    current_step: number;
+    current_dose_mg: number;
+    next_dose_due: string | null;
+    escalation_locked_until_week: number | null;
+    started_on: string | null;
+  }>;
+};
+
+async function encryptDashboardSnapshot(
+  data: DashboardSnapshot,
+  passphrase: string
+): Promise<{
+  v: number;
+  kdf: string;
+  iter: number;
+  salt: string;
+  iv: string;
+  ct: string;
+}> {
+  const encoder = new TextEncoder();
+  const salt = Uint8Array.from({ length: 16 }, (_, index) => index + 1);
+  const iv = Uint8Array.from({ length: 12 }, (_, index) => index + 20);
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    new Uint8Array(encoder.encode(passphrase)),
+    "PBKDF2",
+    false,
+    ["deriveKey"]
+  );
+  const key = await crypto.subtle.deriveKey(
+    { name: "PBKDF2", hash: "SHA-256", salt, iterations: 1 },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt"]
+  );
+  const ct = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new Uint8Array(encoder.encode(JSON.stringify(data)))
+  );
+
+  return {
+    v: 1,
+    kdf: "pbkdf2-sha256",
+    iter: 1,
+    salt: bytesToBase64url(salt),
+    iv: bytesToBase64url(iv),
+    ct: bytesToBase64url(new Uint8Array(ct))
+  };
+}
+
+function bytesToBase64url(bytes: Uint8Array): string {
+  let binary = "";
+
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 async function makeVapidKeys(): Promise<{
